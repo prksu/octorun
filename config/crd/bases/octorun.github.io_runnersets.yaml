@@ -6459,10 +6459,10 @@ spec:
                 format: int32
                 type: integer
               selector:
-                description: 'Selector is the same as the label selector but in the
+                description: "Selector is the same as the label selector but in the
                   string format to avoid introspection by clients. The string will
-                  be in the same format as the query-param syntax. More info about
-                  label selectors: http://kubernetes.io/docs/user-guide/labels#label-selectors'
+                  be in the same format as the query-param syntax. \n DEPRECATED:
+                  Not sure what is used for More info about label selectors: http://kubernetes.io/docs/user-guide/labels#label-selectors"
                 type: string
             type: object
         type: object

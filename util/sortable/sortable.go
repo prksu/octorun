@@ -17,13 +17,15 @@ limitations under the License.
 package sortable
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
+
 	octorunv1 "octorun.github.io/octorun/api/v1alpha2"
 )
 
 const (
-	mustDelete    float64 = 100.0
-	couldDelete   float64 = 50.0
-	mustNotDelete float64 = 0.0
+	runnerMustDelete    float64 = 100.0
+	runnerCouldDelete   float64 = 50.0
+	runnermustNotDelete float64 = 0.0
 )
 
 // RunnersToDelete is sortable slice of Runner
@@ -35,15 +37,32 @@ func (r RunnersToDelete) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
 func (r RunnersToDelete) Less(i, j int) bool {
 	priority := func(runner *octorunv1.Runner) float64 {
 		if !runner.GetDeletionTimestamp().IsZero() {
-			return mustDelete
+			return runnerMustDelete
 		}
 
 		if runner.Status.Phase == octorunv1.RunnerActivePhase {
-			return mustNotDelete
+			return runnermustNotDelete
 		}
 
-		return couldDelete
+		return runnerCouldDelete
 	}
 
 	return priority(r[j]) < priority(r[i])
+}
+
+// Revisions is sortable slice of ControllerRevision
+// implement sort.Interface.
+type Revisions []*appsv1.ControllerRevision
+
+func (r Revisions) Len() int      { return len(r) }
+func (r Revisions) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r Revisions) Less(i, j int) bool {
+	if r[i].Revision == r[j].Revision {
+		if r[j].CreationTimestamp.Equal(&r[i].CreationTimestamp) {
+			return r[i].Name < r[j].Name
+		}
+		return r[j].CreationTimestamp.After(r[i].CreationTimestamp.Time)
+	}
+
+	return r[i].Revision < r[j].Revision
 }

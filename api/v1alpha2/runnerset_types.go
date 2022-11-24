@@ -26,6 +26,29 @@ const (
 	RunnerDeletedReason string = "RunnerDeleted"
 )
 
+// RunnerSetUpdateStrategyType is a string enumeration type that enumerates
+// all possible update strategies for the RunnerSet controller.
+type RunnerSetUpdateStrategyType string
+
+const (
+	// RollingUpdateRunnerSetStrategyType indicates that update will be
+	// applied to all Runners in the RunnerSet.
+	RollingUpdateRunnerSetStrategyType RunnerSetUpdateStrategyType = "RollingUpdate"
+	// OnDeleteRunnerSetStrategyType triggers the legacy behavior.
+	// Runners are recreated from the RunnerSetSpec when they are
+	// manually deleted.
+	OnDeleteRunnerSetStrategyType RunnerSetUpdateStrategyType = "OnDelete"
+)
+
+type RunnerSetUpdateStrategy struct {
+	// Type indicates the type of the RunnerSetUpdateStrategy.
+	// Default is RollingUpdate.
+	// +optional
+	// +kubebuilder:default=RollingUpdate
+	// +kubebuilder:validation:Enum=RollingUpdate;OnDelete
+	Type RunnerSetUpdateStrategyType `json:"type,omitempty"`
+}
+
 // RunnerSetSpec defines the desired state of RunnerSet
 type RunnerSetSpec struct {
 	// Runners is the number of desired runners. This is a pointer
@@ -40,6 +63,11 @@ type RunnerSetSpec struct {
 	// It must match the runner template's labels.
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors
 	Selector metav1.LabelSelector `json:"selector"`
+
+	// UpdateStrategy indicates the RunnerSetUpdateStrategy that will be
+	// employed to update Runners in the RunnerSet when a revision is made to
+	// Template.
+	UpdateStrategy RunnerSetUpdateStrategy `json:"updateStrategy,omitempty"`
 
 	// Template is the object that describes the runner that will be created if
 	// insufficient replicas are detected.
@@ -65,8 +93,16 @@ type RunnerSetStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// Count of hash collisions for the RunnerSet. The RunnerSet controller
+	// uses this field as a collision avoidance mechanism when it needs to
+	// create the name for the newest ControllerRevision.
+	// +optional
+	CollisionCount *int32 `json:"collisionCount,omitempty"`
+
 	// Selector is the same as the label selector but in the string format to avoid introspection
 	// by clients. The string will be in the same format as the query-param syntax.
+	//
+	// DEPRECATED: Not sure what is used for
 	// More info about label selectors: http://kubernetes.io/docs/user-guide/labels#label-selectors
 	// +optional
 	Selector string `json:"selector,omitempty"`

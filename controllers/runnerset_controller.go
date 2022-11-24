@@ -20,16 +20,20 @@ import (
 	"context"
 	"sort"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	octorunv1 "octorun.github.io/octorun/api/v1alpha2"
+	"octorun.github.io/octorun/util/history"
 	"octorun.github.io/octorun/util/patch"
 	"octorun.github.io/octorun/util/sortable"
 )
@@ -104,6 +108,109 @@ func (r *RunnerSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	runnerset.Status.Selector = selector.String()
 	return ctrl.Result{}, nil
+}
+
+func (r *RunnerSetReconciler) reconcile(ctx context.Context, runnerset *octorunv1.RunnerSet, runners []*octorunv1.Runner) (ctrl.Result, error) {
+
+	return ctrl.Result{}, nil
+}
+
+func (r *RunnerSetReconciler) constructRevisions(ctx context.Context, runnerset *octorunv1.RunnerSet) (*appsv1.ControllerRevision, error) {
+	selector, err := metav1.LabelSelectorAsSelector(&runnerset.Spec.Selector)
+	if err != nil {
+		return nil, err
+	}
+
+	revisions, err := r.findRevisions(ctx, runnerset, selector)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Stable(sortable.Revisions(revisions))
+	revisionLen := len(revisions)
+	revisionData, err := history.ObjectPatch(runnerset, scheme.Codecs.LegacyCodec(octorunv1.GroupVersion))
+	if err != nil {
+		return nil, err
+	}
+
+	newRevision := r.newRevision(runnerset, revisionData, r.nextRevision(revisions))
+	equalRevision := history.FindEqualRevisions(revisions, newRevision, octorunv1.LabelControllerRevisionHash)
+	equalRevisionLen := len(equalRevision)
+
+	if equalRevisionLen > 0 && history.EqualRevision(revisions[revisionLen-1], equalRevision[equalRevisionLen-1], octorunv1.LabelControllerRevisionHash) {
+		newRevision = revisions[revisionLen-1]
+	} else if revision := revisions[equalRevisionLen-1]; revision.Revision != newRevision.Revision && equalRevisionLen > 0 {
+		revision.Revision = newRevision.Revision
+		if err := r.Client.Update(ctx, revision); err != nil {
+			return nil, err
+		}
+
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(revision), newRevision); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.Client.Create(ctx, newRevision); err != nil {
+			return nil, err
+		}
+	}
+
+	return newRevision, nil
+}
+
+func (r *RunnerSetReconciler) findRevisions(ctx context.Context, runnerset *octorunv1.RunnerSet, selector labels.Selector) ([]*appsv1.ControllerRevision, error) {
+	revisionList := &appsv1.ControllerRevisionList{}
+	matchLabelsSelector := client.MatchingLabelsSelector{Selector: selector}
+	if err := r.Client.List(ctx, revisionList, client.InNamespace(runnerset.Namespace), matchLabelsSelector); err != nil {
+		return nil, err
+	}
+
+	var revisions []*appsv1.ControllerRevision
+	for _, rev := range revisionList.Items {
+		revision := rev.DeepCopy()
+		ref := metav1.GetControllerOfNoCopy(revision)
+		if ref.UID == runnerset.UID {
+			revisions = append(revisions, revision)
+		}
+	}
+
+	return revisions, nil
+}
+
+func (r *RunnerSetReconciler) newRevision(runnerset *octorunv1.RunnerSet, rawData []byte, revision int64) *appsv1.ControllerRevision {
+	templateLabels := runnerset.Spec.Template.GetLabels()
+	revisionLabels := make(map[string]string)
+	for k, v := range templateLabels {
+		revisionLabels[k] = v
+	}
+
+	revisionAnnotations := make(map[string]string)
+	for k, v := range runnerset.Annotations {
+		revisionAnnotations[k] = v
+	}
+
+	cr := &appsv1.ControllerRevision{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: revisionLabels,
+		},
+		Data:     runtime.RawExtension{Raw: rawData},
+		Revision: revision,
+	}
+
+	ctrl.SetControllerReference(runnerset, cr, r.Scheme)
+	hash := history.RevisionHash(cr, runnerset.Status.CollisionCount)
+	cr.Name = history.RevisionName(runnerset.GetName(), hash)
+	cr.Annotations = revisionAnnotations
+	cr.Labels[octorunv1.LabelControllerRevisionHash] = hash
+	return cr
+}
+
+func (r *RunnerSetReconciler) nextRevision(revisions []*appsv1.ControllerRevision) int64 {
+	count := len(revisions)
+	if count <= 0 {
+		return 1
+	}
+
+	return revisions[count-1].Revision + 1
 }
 
 // findRunners find Runners managed by given RunnerSet. It will adopt the orphan runner if have matching labels but does not have

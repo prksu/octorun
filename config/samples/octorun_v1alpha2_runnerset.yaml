@@ -2,5 +2,21 @@ apiVersion: octorun.github.io/v1alpha2
 kind: RunnerSet
 metadata:
   name: runnerset-sample
+  labels:
+    foo: bar
 spec:
-  # TODO(user): Add fields here
+  runners: 4
+  selector:
+    matchLabels:
+      octorun.github.io/runnerset: myrunnerset
+  template:
+    metadata:
+      labels:
+        octorun.github.io/runnerset: myrunnerset
+    spec:
+      url: https://github.com/octorun/test-repo1
+      image:
+        name: ghcr.io/octorun/runner:latest
+      resources:
+        limits:
+          memory: 200Mi
