@@ -17,6 +17,8 @@ limitations under the License.
 package sortable
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
+
 	octorunv1 "octorun.github.io/octorun/api/v1alpha2"
 )
 
@@ -46,4 +48,21 @@ func (r RunnersToDelete) Less(i, j int) bool {
 	}
 
 	return priority(r[j]) < priority(r[i])
+}
+
+// Revisions is sortable slice of ControllerRevision
+// implement sort.Interface.
+type Revisions []*appsv1.ControllerRevision
+
+func (r Revisions) Len() int      { return len(r) }
+func (r Revisions) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r Revisions) Less(i, j int) bool {
+	if r[i].Revision == r[j].Revision {
+		if r[j].CreationTimestamp.Equal(&r[i].CreationTimestamp) {
+			return r[i].Name < r[j].Name
+		}
+		return r[j].CreationTimestamp.After(r[i].CreationTimestamp.Time)
+	}
+
+	return r[i].Revision < r[j].Revision
 }
