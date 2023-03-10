@@ -18,8 +18,6 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"sort"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -28,8 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,6 +53,7 @@ type RunnerSetReconciler struct {
 // +kubebuilder:rbac:groups=octorun.github.io,resources=runners,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=octorun.github.io,resources=runners/status,verbs=get
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=apps,resources=controllerrevisions,verbs=get;list;watch;create;update;patch
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *RunnerSetReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
@@ -90,13 +89,10 @@ func (r *RunnerSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}()
 
-	rev, err := r.constructRevisions(ctx, runnerset)
+	_, err = r.constructRevisions(ctx, runnerset)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-
-	b, _ := json.Marshal(rev)
-	fmt.Println(string(b))
 
 	// selector, err := metav1.LabelSelectorAsSelector(&runnerset.Spec.Selector)
 	// if err != nil {
@@ -135,9 +131,10 @@ func (r *RunnerSetReconciler) constructRevisions(ctx context.Context, runnerset 
 		return nil, err
 	}
 
+	codec := serializer.NewCodecFactory(r.Scheme).LegacyCodec(octorunv1.GroupVersion)
 	sort.Stable(sortable.Revisions(revisions))
 	revisionLen := len(revisions)
-	revisionData, err := revision.RevPatch(runnerset, scheme.Codecs.LegacyCodec(octorunv1.GroupVersion))
+	revisionData, err := revision.RevPatch(runnerset, codec)
 	if err != nil {
 		return nil, err
 	}
@@ -148,13 +145,13 @@ func (r *RunnerSetReconciler) constructRevisions(ctx context.Context, runnerset 
 
 	if equalRevisionLen > 0 && revision.IsEqual(revisions[revisionLen-1], equalRevision[equalRevisionLen-1], octorunv1.LabelControllerRevisionHash) {
 		newRevision = revisions[revisionLen-1]
-	} else if revision := revisions[equalRevisionLen-1]; revision.Revision != newRevision.Revision && equalRevisionLen > 0 {
-		revision.Revision = newRevision.Revision
-		if err := r.Client.Update(ctx, revision); err != nil {
+	} else if equalRevisionLen > 0 {
+		newRevision = revisions[equalRevisionLen-1]
+		if err := r.Client.Update(ctx, newRevision); err != nil {
 			return nil, err
 		}
 
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(revision), newRevision); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(newRevision), newRevision); err != nil {
 			return nil, err
 		}
 	} else {
@@ -197,17 +194,19 @@ func (r *RunnerSetReconciler) newRevision(runnerset *octorunv1.RunnerSet, rawDat
 		revisionAnnotations[k] = v
 	}
 
+	ref := metav1.NewControllerRef(runnerset, octorunv1.GroupVersion.WithKind("RunnerSet"))
 	cr := &appsv1.ControllerRevision{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: revisionLabels,
+			Labels:          revisionLabels,
+			OwnerReferences: []metav1.OwnerReference{*ref},
 		},
 		Data:     runtime.RawExtension{Raw: rawData},
 		Revision: rev,
 	}
 
-	ctrl.SetControllerReference(runnerset, cr, r.Scheme)
 	hash := revision.RevHash(cr, runnerset.Status.CollisionCount)
 	cr.Name = revision.RevName(runnerset.GetName(), hash)
+	cr.Namespace = runnerset.GetNamespace()
 	cr.Annotations = revisionAnnotations
 	cr.Labels[octorunv1.LabelControllerRevisionHash] = hash
 	return cr

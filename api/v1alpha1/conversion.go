@@ -42,3 +42,12 @@ func Convert_v1alpha2_RunnerSpec_To_v1alpha1_RunnerSpec(in *octorunv1.RunnerSpec
 	out.VolumeMounts = in.VolumeMounts
 	return nil
 }
+
+func Convert_v1alpha2_RunnerSetStatus_To_v1alpha1_RunnerSetStatus(in *octorunv1.RunnerSetStatus, out *RunnerSetStatus, s apiconversion.Scope) error {
+	out.Runners = in.Runners
+	out.IdleRunners = in.IdleRunners
+	out.ActiveRunners = in.ActiveRunners
+	out.Conditions = in.Conditions
+	out.Selector = in.Selector
+	return nil
+}
