@@ -63,7 +63,7 @@ var _ = Describe("RunnerWebhook", func() {
 				Expect(crclient.Get(ctx, client.ObjectKeyFromObject(runner), runner)).ToNot(HaveOccurred())
 
 				By("Assert the Runner spec")
-				Expect(runner.Spec.Group).NotTo(BeEmpty())
+				Expect(runner.Spec.DeprecatedGroup).NotTo(BeEmpty())
 				Expect(runner.Spec.Workdir).NotTo(BeEmpty())
 			})
 		})
@@ -135,8 +135,8 @@ func TestRunnerWebhook_Default(t *testing.T) {
 					Name: "runner-test",
 				},
 				Spec: octorunv1.RunnerSpec{
-					Workdir: "_work",
-					Group:   "Default",
+					Workdir:         "_work",
+					DeprecatedGroup: "Default",
 				},
 			},
 			wantErr: false,

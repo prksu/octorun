@@ -19,7 +19,7 @@ package errors
 import (
 	"net/http"
 
-	"github.com/google/go-github/v41/github"
+	"github.com/google/go-github/v53/github"
 )
 
 // IsReteLimit returns true if given error is github.RateLimitError

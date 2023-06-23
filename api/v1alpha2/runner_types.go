@@ -128,7 +128,13 @@ type RunnerSpec struct {
 	// Name of the runner group to add to this runner.
 	// Defaults to Default.
 	// +optional
-	Group string `json:"group,omitempty"`
+	DeprecatedGroup string `json:"group,omitempty"`
+
+	// ID of the runner group to add to this runner.
+	// Defaults to 1.
+	// +kubebuilder:default:=1
+	// +optional
+	GroupID int64 `json:"groupID,omitempty"`
 
 	// Relative runner work directory.
 	// +optional

@@ -82,7 +82,7 @@ var _ = Describe("RunnerSetReconciler", func() {
 					Spec: octorunv1.RunnerSpec{
 						URL: os.Getenv("TEST_GITHUB_URL"),
 						Image: octorunv1.RunnerImage{
-							Name:       "ghcr.io/octorun/runner",
+							Name:       "runner:jitconfig",
 							PullPolicy: corev1.PullIfNotPresent,
 						},
 					},

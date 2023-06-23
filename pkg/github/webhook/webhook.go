@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/google/go-github/v41/github"
+	"github.com/google/go-github/v53/github"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )

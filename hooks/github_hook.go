@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/go-github/v41/github"
+	"github.com/google/go-github/v53/github"
 
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -97,7 +97,7 @@ func (gh *GithubHook) runnerCompositeIndexer(o client.Object) []string {
 	return append(v, gh.runnerCompositeIndex(
 		runner.Name,
 		strconv.Itoa(int(runnerID)),
-		runner.Spec.Group,
+		strconv.Itoa(int(runner.Spec.GroupID)),
 		runner.Spec.URL,
 	))
 }

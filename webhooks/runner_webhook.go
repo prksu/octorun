@@ -67,8 +67,8 @@ func (w *RunnerWebhook) Default(ctx context.Context, obj runtime.Object) error {
 		runner.Labels[octorunv1.LabelRunnerName] = runner.GetName()
 	}
 
-	if runner.Spec.Group == "" {
-		runner.Spec.Group = "Default"
+	if runner.Spec.DeprecatedGroup == "" {
+		runner.Spec.DeprecatedGroup = "Default"
 	}
 
 	if runner.Spec.Workdir == "" {

@@ -21,15 +21,17 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/google/go-github/v41/github"
+	"github.com/google/go-github/v53/github"
 )
 
 type ActionClient interface {
 	GetRunner(ctx context.Context, runnerURL string, runnerID int64) (Runner, error)
+	CreateRunner(ctx context.Context, runnerURL, runnerName string, runnerGroupID int64, workdir *string, runnerLabels ...string) (string, error)
 	CreateRunnerToken(ctx context.Context, runnerURL string) (RunnerToken, error)
 }
 
 type Runner interface {
+	GetID() int64
 	GetName() string
 	GetBusy() bool
 	GetOS() string
@@ -76,6 +78,24 @@ func (gh *Client) GetRunner(ctx context.Context, runnerURL string, runnerID int6
 
 	runner, _, err := gh.Actions.GetOrganizationRunner(ctx, runnerKey.Owner, runnerID)
 	return runner, err
+}
+
+func (gh *Client) CreateRunner(ctx context.Context, runnerURL, runnerName string, runnerGroupID int64, workdir *string, runnerLabels ...string) (string, error) {
+	runnerKey := parseRunnerURL(runnerURL)
+	req := &github.GenerateJITConfigRequest{
+		Name:          runnerName,
+		RunnerGroupID: runnerGroupID,
+		WorkFolder:    workdir,
+		Labels:        runnerLabels,
+	}
+
+	if runnerKey.Repository != "" {
+		config, _, err := gh.Actions.GenerateRepoJITConfig(ctx, runnerKey.Owner, runnerKey.Repository, req)
+		return config.GetEncodedJITConfig(), err
+	}
+
+	config, _, err := gh.Actions.GenerateOrgJITConfig(ctx, runnerKey.Owner, req)
+	return config.GetEncodedJITConfig(), err
 }
 
 func (gh *Client) CreateRunnerToken(ctx context.Context, runnerURL string) (RunnerToken, error) {

@@ -3380,6 +3380,12 @@ spec:
                         description: Name of the runner group to add to this runner.
                           Defaults to Default.
                         type: string
+                      groupID:
+                        default: 1
+                        description: ID of the runner group to add to this runner.
+                          Defaults to 1.
+                        format: int64
+                        type: integer
                       id:
                         description: ID of the runner assigned by Github, basically
                           it is sequential number. Read-only.

@@ -50,6 +50,26 @@ func (m *MockClient) EXPECT() *MockClientMockRecorder {
 	return m.recorder
 }
 
+// CreateRunner mocks base method.
+func (m *MockClient) CreateRunner(arg0 context.Context, arg1, arg2 string, arg3 int64, arg4 *string, arg5 ...string) (string, error) {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1, arg2, arg3, arg4}
+	for _, a := range arg5 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "CreateRunner", varargs...)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateRunner indicates an expected call of CreateRunner.
+func (mr *MockClientMockRecorder) CreateRunner(arg0, arg1, arg2, arg3, arg4 interface{}, arg5 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1, arg2, arg3, arg4}, arg5...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRunner", reflect.TypeOf((*MockClient)(nil).CreateRunner), varargs...)
+}
+
 // CreateRunnerToken mocks base method.
 func (m *MockClient) CreateRunnerToken(arg0 context.Context, arg1 string) (client.RunnerToken, error) {
 	m.ctrl.T.Helper()

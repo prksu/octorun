@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/go-github/v41/github"
+	"github.com/google/go-github/v53/github"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"

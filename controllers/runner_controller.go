@@ -36,7 +36,6 @@ import (
 	"octorun.github.io/octorun/pkg/github"
 	gherrors "octorun.github.io/octorun/pkg/github/errors"
 	"octorun.github.io/octorun/util"
-	"octorun.github.io/octorun/util/annotations"
 	"octorun.github.io/octorun/util/patch"
 	"octorun.github.io/octorun/util/pod"
 	"octorun.github.io/octorun/util/remoteexec"
@@ -129,33 +128,12 @@ func (r *RunnerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ c
 		}
 
 		log.Info("deleting Runner resources")
-		if _, err := ctrl.CreateOrUpdate(ctx, r.Client, runnerSecret, func() error {
-			if annotations.IsTokenExpired(runnerSecret) {
-				log.V(1).Info("registration token has expired. Refresh before deleting", "secret", runnerSecret.Name)
-				rt, err := r.Github.CreateRunnerToken(ctx, runner.Spec.URL)
-				if err != nil && !(gherrors.IsForbidden(err) || gherrors.IsNotFound(err)) {
-					return err
-				}
-
-				annotations.AnnotateTokenExpires(runnerSecret, rt.GetExpiresAt().UTC().Format(time.RFC3339))
-				if runnerSecret.Data == nil {
-					runnerSecret.Data = make(map[string][]byte)
-				}
-
-				runnerSecret.Data["token"] = []byte(rt.GetToken())
-			}
-
-			return ctrl.SetControllerReference(runner, runnerSecret, r.Scheme)
-		}); err != nil {
-			return ctrl.Result{}, err
-		}
-
 		log.V(1).Info("deleting Runner pod", "pod", runnerPod.Name)
 		if err := r.Delete(ctx, runnerPod); client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
 
-		log.V(1).Info("deleting Runner registration token secret", "secret", runnerSecret.Name)
+		log.V(1).Info("deleting Runner jitconfig secret", "secret", runnerSecret.Name)
 		if err := r.Delete(ctx, runnerSecret); client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, err
 		}
@@ -170,38 +148,48 @@ func (r *RunnerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ c
 
 	// Create a runner secret if it doesn't exist or update it if the token has expired.
 	if op, err := ctrl.CreateOrUpdate(ctx, r.Client, runnerSecret, func() error {
-		log.V(1).Info("reconciling Runner registration token secret", "secret", runnerSecret.Name)
-		if runnerSecret.CreationTimestamp.IsZero() || annotations.IsTokenExpired(runnerSecret) {
-			log.V(1).Info("Runner registration token secret does not exist or already expired", "secret", runnerSecret.Name)
-			rt, err := r.Github.CreateRunnerToken(ctx, runner.Spec.URL)
-			if err != nil {
-				return err
+		log.V(1).Info("reconciling Runner jitconfig secret", "secret", runnerSecret.Name)
+		runnerLabels := make([]string, 0)
+		for k, v := range runner.ObjectMeta.Labels {
+			if !strings.HasPrefix(k, octorunv1.LabelPrefix) {
+				continue
 			}
 
-			annotations.AnnotateTokenExpires(runnerSecret, rt.GetExpiresAt().UTC().Format(time.RFC3339))
-			runnerSecret.Data["token"] = []byte(rt.GetToken())
+			runnerLabel := strings.TrimPrefix(k, octorunv1.LabelPrefix) + "=" + v
+			runnerLabels = append(runnerLabels, runnerLabel)
 		}
 
+		jitconfig, err := r.Github.CreateRunner(ctx, runner.Spec.URL, runner.Name, runner.Spec.GroupID, pointer.String(runner.Spec.Workdir), runnerLabels...)
+		if err != nil {
+			if gherrors.IsConflict(err) {
+				return nil
+			}
+
+			return err
+		}
+
+		runnerSecret.StringData["jitconfig"] = jitconfig
 		return ctrl.SetControllerReference(runner, runnerSecret, r.Scheme)
 	}); err != nil {
+		// TODO (prksu): Need to ensure if we have to terminate reconcile when spec is invalid
 		if gherrors.IsForbidden(err) || gherrors.IsNotFound(err) {
 			// If we got forbidden or not found error from Github here just record an Warning event and return error nil (terminal failure).
-			// returning Requeue false with nil error here is to prevent the controller keep reconciling and trying to create the registration token.
+			// returning Requeue false with nil error here is to prevent the controller keep reconciling and trying to create the jitconfig.
 			// Users must have to recreate the runner with the proper spec.
 			//
 			// It's ok to just record an Warning event here since users still can gather information on why
 			// the runner keeps in Pending status eg: using `kubectl describe` command
 			//
 			// TODO(prksu): consider introducing terminal failure based on Runner status/condition?
-			log.Error(err, "Unable to create Runner registration token")
-			r.Recorder.Eventf(runner, corev1.EventTypeWarning, octorunv1.RunnerSecretFailedReason, "Unable to create Runner registration token: %v", err)
+			log.Error(err, "Unable to create Runner jitconfig")
+			r.Recorder.Eventf(runner, corev1.EventTypeWarning, octorunv1.RunnerSecretFailedReason, "Unable to create Runner jitconfig: %v", err)
 			return ctrl.Result{Requeue: false}, nil
 		}
 
-		log.Error(err, "failed reconciling Runner registration token secret", "secret", runnerSecret.Name)
+		log.Error(err, "failed reconciling Runner jitconfig secret", "secret", runnerSecret.Name)
 		return ctrl.Result{}, err
 	} else {
-		log.V(1).Info("reconciled Runner registration token secret", "secret", runnerSecret.Name, "op", op)
+		log.V(1).Info("reconciled Runner jitconfig secret", "secret", runnerSecret.Name, "op", op)
 	}
 
 	// Create a runner pod if it doesn't exist. actually, it's never updating the runner pod and we won't.
@@ -317,11 +305,11 @@ func (r *RunnerReconciler) reconcileStatus(ctx context.Context, runner *octorunv
 func secretForRunner(runner *octorunv1.Runner) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      runner.Name + "-registration-token",
+			Name:      runner.Name + "-jitconfig",
 			Namespace: runner.Namespace,
 		},
-		Data:      make(map[string][]byte),
-		Immutable: pointer.BoolPtr(false),
+		StringData: make(map[string]string),
+		Immutable:  pointer.BoolPtr(false),
 	}
 }
 
@@ -329,16 +317,6 @@ func podForRunner(runner *octorunv1.Runner) *corev1.Pod {
 	annotation := make(map[string]string)
 	if runner.Spec.EvictionPolicy == octorunv1.RunnerEvictionIfNotActive {
 		annotation["cluster-autoscaler.kubernetes.io/safe-to-evict"] = "true"
-	}
-
-	runnerLabels := make([]string, 0)
-	for k, v := range runner.ObjectMeta.Labels {
-		if !strings.HasPrefix(k, octorunv1.LabelPrefix) {
-			continue
-		}
-
-		runnerLabel := strings.TrimPrefix(k, octorunv1.LabelPrefix) + "=" + v
-		runnerLabels = append(runnerLabels, runnerLabel)
 	}
 
 	return &corev1.Pod{
@@ -358,32 +336,16 @@ func podForRunner(runner *octorunv1.Runner) *corev1.Pod {
 					ImagePullPolicy: runner.Spec.Image.PullPolicy,
 					Env: []corev1.EnvVar{
 						{
-							Name:  "URL",
-							Value: runner.Spec.URL,
-						},
-						{
-							Name: "RUNNER_NAME",
+							Name: "RUNNER_JITCONFIG",
 							ValueFrom: &corev1.EnvVarSource{
-								FieldRef: &corev1.ObjectFieldSelector{
-									FieldPath: "metadata.name",
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: runner.Name + "-jitconfig",
+									},
+									Key:      "jitconfig",
+									Optional: pointer.Bool(false),
 								},
 							},
-						},
-						{
-							Name:  "RUNNER_LABELS",
-							Value: strings.Join(runnerLabels, ","),
-						},
-						{
-							Name:  "RUNNER_GROUP",
-							Value: runner.Spec.Group,
-						},
-						{
-							Name:  "RUNNER_WORKDIR",
-							Value: runner.Spec.Workdir,
-						},
-						{
-							Name:  "RUNNER_TOKEN_FILE",
-							Value: "/var/run/secrets/runner.octorun.github.io/registration-token/token",
 						},
 					},
 					StartupProbe: &corev1.Probe{
@@ -396,27 +358,12 @@ func podForRunner(runner *octorunv1.Runner) *corev1.Pod {
 						PeriodSeconds:       10,
 						FailureThreshold:    30,
 					},
-					VolumeMounts: append([]corev1.VolumeMount{
-						{
-							Name:      "registration-token",
-							ReadOnly:  true,
-							MountPath: "/var/run/secrets/runner.octorun.github.io/registration-token",
-						},
-					}, runner.Spec.VolumeMounts...),
+					VolumeMounts:    runner.Spec.VolumeMounts,
 					Resources:       runner.Spec.Resources,
 					SecurityContext: runner.Spec.SecurityContext,
 				},
 			},
-			Volumes: append([]corev1.Volume{
-				{
-					Name: "registration-token",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: runner.Name + "-registration-token",
-						},
-					},
-				},
-			}, runner.Spec.Volumes...),
+			Volumes:            runner.Spec.Volumes,
 			ServiceAccountName: runner.Spec.ServiceAccountName,
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsUser:    pointer.Int64(1000),

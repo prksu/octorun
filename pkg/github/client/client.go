@@ -21,7 +21,7 @@ import (
 	"errors"
 	"net/url"
 
-	"github.com/google/go-github/v41/github"
+	"github.com/google/go-github/v53/github"
 	"golang.org/x/oauth2"
 )
 

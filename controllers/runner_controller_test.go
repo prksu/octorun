@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	gogithub "github.com/google/go-github/v41/github"
+	gogithub "github.com/google/go-github/v53/github"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -77,10 +77,10 @@ var _ = Describe("RunnerReconciler", func() {
 			Spec: octorunv1.RunnerSpec{
 				URL: os.Getenv("TEST_GITHUB_URL"),
 				Image: octorunv1.RunnerImage{
-					Name:       "ghcr.io/octorun/runner",
+					Name:       "runner:jitconfig",
 					PullPolicy: corev1.PullIfNotPresent,
 				},
-				Group:   "Default",
+				GroupID: 1,
 				Workdir: "/work-dir",
 				Resources: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList{
@@ -585,7 +585,7 @@ func TestRunnerReconciler_Reconcile(t *testing.T) {
 				Spec: octorunv1.RunnerSpec{
 					URL: "https://github.com/octorun",
 					Image: octorunv1.RunnerImage{
-						Name: "ghcr.io/octorun/runner",
+						Name: "runner:jitconfig",
 					},
 				},
 			})
